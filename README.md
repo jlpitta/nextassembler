@@ -2,7 +2,6 @@
 
 Pipeline [Nextflow](https://www.nextflow.io/) DSL2 para **montagem de genomas long-read com polishing híbrido** (long reads + short reads Illumina). Combina ferramentas de montagem, polishing e avaliação de qualidade em um fluxo automatizado com gerenciamento de ambientes Conda.
 
-> Baseado em: Luan et al. *BMC Genomics* 2024 · [doi:10.1186/s12864-024-10582-x](https://doi.org/10.1186/s12864-024-10582-x)
 
 ---
 
