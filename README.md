@@ -227,32 +227,52 @@ Amostras com short reads passam pelo Polypolish; amostras sem short reads são p
 
 ## Os 8 fluxos de execução
 
+Cada fluxo pode ser executado de duas formas:
+- **Single-sample** — parâmetros diretos na linha de comando
+- **Multi-sample** — samplesheet CSV com múltiplas amostras em paralelo
+
 ### Modo `denovo` / Flye
 
 **Fluxo 1 — Mínimo: Flye + Medaka**
 
 ```bash
+# single-sample
 nextflow run nextassembler.nf -resume \
     --t 16 \
     --long_reads lr.fastq.gz \
     --genome_size 5m \
     --sample_name amostra01
+
+# multi-sample (samples.csv: sample,long_reads,genome_size)
+nextflow run nextassembler.nf -resume \
+    --t 64 \
+    --samplesheet samples.csv
 ```
 
 **Fluxo 2 — Com Racon: Flye + Racon + Medaka**
 
 ```bash
+# single-sample
 nextflow run nextassembler.nf -resume \
     --t 16 \
     --long_reads lr.fastq.gz \
     --genome_size 5m \
     --sample_name amostra01 \
     --use_racon
+
+# multi-sample
+nextflow run nextassembler.nf -resume \
+    --t 64 \
+    --samplesheet samples.csv \
+    --use_racon
 ```
 
 **Fluxo 3 — Padrão-ouro: Flye + Medaka + Polypolish**
 
+> Polypolish é o padrão quando short reads são fornecidas. Nenhum parâmetro extra necessário.
+
 ```bash
+# single-sample
 nextflow run nextassembler.nf -resume \
     --t 32 \
     --long_reads lr.fastq.gz \
@@ -260,13 +280,17 @@ nextflow run nextassembler.nf -resume \
     --short_reads_2 r2.fastq.gz \
     --genome_size 5m \
     --sample_name amostra01
-```
 
-> Polypolish é o padrão quando short reads são fornecidas. Nenhum parâmetro extra necessário.
+# multi-sample (samples.csv: sample,long_reads,short_reads_1,short_reads_2,genome_size)
+nextflow run nextassembler.nf -resume \
+    --t 64 \
+    --samplesheet samples.csv
+```
 
 **Fluxo 4 — Completo: Flye + Racon + Medaka + Polypolish**
 
 ```bash
+# single-sample
 nextflow run nextassembler.nf -resume \
     --t 32 \
     --long_reads lr.fastq.gz \
@@ -274,6 +298,12 @@ nextflow run nextassembler.nf -resume \
     --short_reads_2 r2.fastq.gz \
     --genome_size 5m \
     --sample_name amostra01 \
+    --use_racon
+
+# multi-sample
+nextflow run nextassembler.nf -resume \
+    --t 64 \
+    --samplesheet samples.csv \
     --use_racon
 ```
 
@@ -284,6 +314,7 @@ nextflow run nextassembler.nf -resume \
 **Fluxo 5 — Unicycler + Medaka + Polypolish**
 
 ```bash
+# single-sample
 nextflow run nextassembler.nf -resume \
     --t 32 \
     --long_reads lr.fastq.gz \
@@ -292,11 +323,18 @@ nextflow run nextassembler.nf -resume \
     --genome_size 5m \
     --sample_name amostra01 \
     --assembler unicycler
+
+# multi-sample
+nextflow run nextassembler.nf -resume \
+    --t 64 \
+    --samplesheet samples.csv \
+    --assembler unicycler
 ```
 
 **Fluxo 6 — Unicycler + Racon + Medaka + Polypolish**
 
 ```bash
+# single-sample
 nextflow run nextassembler.nf -resume \
     --t 32 \
     --long_reads lr.fastq.gz \
@@ -306,6 +344,13 @@ nextflow run nextassembler.nf -resume \
     --sample_name amostra01 \
     --assembler unicycler \
     --use_racon
+
+# multi-sample
+nextflow run nextassembler.nf -resume \
+    --t 64 \
+    --samplesheet samples.csv \
+    --assembler unicycler \
+    --use_racon
 ```
 
 ### Modo `reference`
@@ -313,17 +358,26 @@ nextflow run nextassembler.nf -resume \
 **Fluxo 7 — Referência + Medaka**
 
 ```bash
+# single-sample
 nextflow run nextassembler.nf -resume \
     --t 16 \
     --mode reference \
     --long_reads lr.fastq.gz \
     --reference ref.fasta \
     --sample_name amostra01
+
+# multi-sample
+nextflow run nextassembler.nf -resume \
+    --t 64 \
+    --mode reference \
+    --samplesheet samples.csv \
+    --reference ref.fasta
 ```
 
 **Fluxo 8 — Referência + Medaka + Polypolish**
 
 ```bash
+# single-sample
 nextflow run nextassembler.nf -resume \
     --t 32 \
     --mode reference \
@@ -332,6 +386,13 @@ nextflow run nextassembler.nf -resume \
     --short_reads_2 r2.fastq.gz \
     --reference ref.fasta \
     --sample_name amostra01
+
+# multi-sample
+nextflow run nextassembler.nf -resume \
+    --t 64 \
+    --mode reference \
+    --samplesheet samples.csv \
+    --reference ref.fasta
 ```
 
 ### Usar NextPolish em vez de Polypolish
