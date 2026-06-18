@@ -35,7 +35,7 @@ Short reads ─► FASTP ──► R1.clean + R2.clean  (paralelo ao NanoFilt)  
                               │                    │
                               │           [Medaka] ◄── lr.filtered
                               │                    │
-                              └──────► [NextPolish 1–4×]  (opcional)
+                              └──► [Polypolish] ou [NextPolish]  (opcional)
                                                    │
                                                [QUAST]
                                                    │
@@ -52,7 +52,8 @@ Short reads ─► FASTP ──► R1.clean + R2.clean  (paralelo ao NanoFilt)  
 | Montagem | Flye / Unicycler | Montagem *de novo* |
 | Polishing long reads | Racon | Polishing rápido pré-Medaka (opcional) |
 | Polishing long reads | Medaka 1.11.3 | Correção de erros com modelo de rede neural |
-| Polishing short reads | NextPolish | Correção final com Illumina (opcional) |
+| Polishing short reads | **Polypolish** (padrão) | Correção final com Illumina, base a base |
+| Polishing short reads | NextPolish (alternativa) | Correção multi-round com Illumina (`--polisher nextpolish`) |
 | Avaliação | QUAST | Métricas de qualidade da montagem |
 
 ---
@@ -91,7 +92,7 @@ mamba env list | grep nextassembler
 
 | Ambiente | YAML | Ferramentas |
 |---|---|---|
-| `nextassembler-tools` | `envs/tools.yaml` | nanofilt, fastp, flye, unicycler, minimap2, racon, seqkit, samtools, nextpolish, bwa, quast, multiqc, nanostat |
+| `nextassembler-tools` | `envs/tools.yaml` | nanofilt, fastp, flye, unicycler, minimap2, racon, seqkit, samtools, polypolish, nextpolish, bwa, quast, multiqc, nanostat |
 | `nextassembler-medaka` | `envs/medaka.yaml` | medaka=1.11.3 (**isolada** — conflito TensorFlow/ONNX com bioconda) |
 
 O Medaka é mantido em ambiente isolado obrigatoriamente, pois suas dependências (TensorFlow, ONNX) conflitam com pacotes do canal bioconda.
@@ -114,7 +115,7 @@ Definido com `--platform` (padrão: `mgicyclone`):
 
 ### `--mode denovo` (padrão)
 
-Monta o genoma do zero com Flye ou Unicycler, seguido de polishing com Medaka e opcionalmente NextPolish.
+Monta o genoma do zero com Flye ou Unicycler, seguido de polishing com Medaka e opcionalmente Polypolish ou NextPolish.
 
 ### `--mode reference`
 
@@ -143,8 +144,7 @@ nextflow run nextassembler.nf -resume \
 ```bash
 nextflow run nextassembler.nf -resume \
     --t 64 \
-    --samplesheet samples.csv \
-    --use_nextpolish
+    --samplesheet samples.csv
 ```
 
 **Formato do CSV** (colunas `short_reads_1/2` são opcionais por linha):
@@ -169,15 +169,15 @@ amostra03,data/A03/lr.fastq.gz,,,4.8m
 | `--mode` | `denovo` | Modo: `denovo` ou `reference` |
 | `--long_reads` | — | FASTQ long reads (obrigatório sem samplesheet) |
 | `--samplesheet` | — | CSV multi-sample (alternativa a --long_reads) |
-| `--short_reads_1` | — | R1 Illumina (obrigatório para unicycler, nextpolish, fastp) |
+| `--short_reads_1` | — | R1 Illumina (obrigatório para unicycler e polishing short-read) |
 | `--short_reads_2` | — | R2 Illumina |
 | `--genome_size` | — | Tamanho estimado do genoma (ex: `5m`, `4.8m`, `2g`) |
 | `--sample_name` | `sample` | Prefixo dos outputs e nome da subpasta em results/ |
 | `--assembler` | `flye` | Montador: `flye` ou `unicycler` |
 | `--platform` | `mgicyclone` | Plataforma sequenciadora |
 | `--use_racon` | `false` | Ativar polishing com Racon antes do Medaka |
-| `--use_nextpolish` | `false` | Ativar polishing com NextPolish após Medaka |
-| `--nextpolish_rounds` | `1` | Iterações do NextPolish (1–4) |
+| `--polisher` | `polypolish` | Polidor short-read: `polypolish` (padrão), `nextpolish` ou `none` |
+| `--nextpolish_rounds` | `1` | Iterações do NextPolish (1–4; apenas com `--polisher nextpolish`) |
 | `--reference` | `null` | Draft para modo `reference`; referência comparativa QUAST no modo `denovo` |
 | `--medaka_model` | *(da plataforma)* | Sobrescreve o modelo Medaka padrão |
 | `--t` | — | Total de CPUs disponíveis |
@@ -213,7 +213,7 @@ nextflow run nextassembler.nf -resume \
     --use_racon
 ```
 
-**Fluxo 3 — Padrão-ouro: Flye + Medaka + NextPolish**
+**Fluxo 3 — Padrão-ouro: Flye + Medaka + Polypolish**
 
 ```bash
 nextflow run nextassembler.nf -resume \
@@ -222,11 +222,12 @@ nextflow run nextassembler.nf -resume \
     --short_reads_1 r1.fastq.gz \
     --short_reads_2 r2.fastq.gz \
     --genome_size 5m \
-    --sample_name amostra01 \
-    --use_nextpolish
+    --sample_name amostra01
 ```
 
-**Fluxo 4 — Completo: Flye + Racon + Medaka + NextPolish**
+> Polypolish é o padrão quando short reads são fornecidas. Nenhum parâmetro extra necessário.
+
+**Fluxo 4 — Completo: Flye + Racon + Medaka + Polypolish**
 
 ```bash
 nextflow run nextassembler.nf -resume \
@@ -236,15 +237,14 @@ nextflow run nextassembler.nf -resume \
     --short_reads_2 r2.fastq.gz \
     --genome_size 5m \
     --sample_name amostra01 \
-    --use_racon \
-    --use_nextpolish
+    --use_racon
 ```
 
 ### Modo `denovo` / Unicycler
 
-> Short reads são **obrigatórios** com Unicycler.
+> Short reads são **obrigatórios** com Unicycler. Polypolish roda por padrão após o Medaka.
 
-**Fluxo 5 — Unicycler + Medaka**
+**Fluxo 5 — Unicycler + Medaka + Polypolish**
 
 ```bash
 nextflow run nextassembler.nf -resume \
@@ -257,7 +257,7 @@ nextflow run nextassembler.nf -resume \
     --assembler unicycler
 ```
 
-**Fluxo 6 — Unicycler + Racon + Medaka**
+**Fluxo 6 — Unicycler + Racon + Medaka + Polypolish**
 
 ```bash
 nextflow run nextassembler.nf -resume \
@@ -284,7 +284,7 @@ nextflow run nextassembler.nf -resume \
     --sample_name amostra01
 ```
 
-**Fluxo 8 — Referência + Medaka + NextPolish**
+**Fluxo 8 — Referência + Medaka + Polypolish**
 
 ```bash
 nextflow run nextassembler.nf -resume \
@@ -294,8 +294,16 @@ nextflow run nextassembler.nf -resume \
     --short_reads_1 r1.fastq.gz \
     --short_reads_2 r2.fastq.gz \
     --reference ref.fasta \
-    --sample_name amostra01 \
-    --use_nextpolish
+    --sample_name amostra01
+```
+
+### Usar NextPolish em vez de Polypolish
+
+Para qualquer fluxo que utilize short reads, substitua o polidor padrão com:
+
+```bash
+--polisher nextpolish
+# opcional: --nextpolish_rounds 3
 ```
 
 ---
@@ -307,7 +315,7 @@ Tenho só long reads?
   └─► Fluxo 1 (Flye + Medaka) — mínimo viável
 
 Tenho long + short reads?
-  └─► Fluxo 3 (Flye + Medaka + NextPolish) — padrão-ouro
+  └─► Fluxo 3 (Flye + Medaka + Polypolish) — padrão-ouro
       └─► Máxima qualidade: Fluxo 4 (+ Racon)
 
 Genoma bem caracterizado / referência confiável disponível?
@@ -329,7 +337,7 @@ O parâmetro `--t` define o total de CPUs disponíveis. O pipeline distribui aut
 | Nível | Processos | CPUs |
 |---|---|---|
 | `process_low` | NanoFilt, FASTP, QUAST | `t / 4` |
-| `process_medium` | Racon, Medaka, NextPolish | `t / 2` |
+| `process_medium` | Racon, Medaka, Polypolish, NextPolish | `t / 2` |
 | `process_high` | Flye | `t` (todos) |
 
 Exemplo com `--t 32`: NanoFilt + FASTP rodam em paralelo (8 + 8 CPUs), Flye usa todas as 32.
@@ -380,6 +388,7 @@ nextassembler/
     ├── unicycler.nf
     ├── racon.nf
     ├── medaka.nf
+    ├── polypolish.nf
     ├── nextpolish.nf
     └── quast.nf
 ```
@@ -411,9 +420,14 @@ nextflow run nextassembler.nf -resume ...
 --downsample 200000
 ```
 
-**Mais rounds de NextPolish para maior qualidade:**
+**Usar NextPolish com múltiplos rounds:**
 ```bash
---use_nextpolish --nextpolish_rounds 3
+--polisher nextpolish --nextpolish_rounds 3
+```
+
+**Desativar polimento short-read:**
+```bash
+--polisher none
 ```
 
 **Modelo Medaka personalizado:**
