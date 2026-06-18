@@ -62,7 +62,7 @@ Short reads ─► FASTP ──► R1.clean + R2.clean  (paralelo ao NanoFilt)  
 
 ### Pré-requisitos
 
-- [Mamba](https://mamba.readthedocs.io/) ou [Conda](https://docs.conda.io/)
+- [Mamba](https://mamba.readthedocs.io/), [Micromamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html) ou [Conda](https://docs.conda.io/) — o script de instalação detecta automaticamente qual está disponível
 
 > O Nextflow é instalado automaticamente dentro do ambiente `nextassembler-tools`. Não é necessário instalá-lo separadamente.
 
@@ -76,17 +76,19 @@ cd nextassembler
 bash install_envs.sh
 ```
 
-O script instala dois ambientes e exibe instruções para configurar o `nextflow` no terminal. Há duas opções:
+O script detecta automaticamente `mamba`, `micromamba` ou `conda` (nessa ordem de preferência), instala os dois ambientes e exibe instruções para configurar o `nextflow` no terminal. Há duas opções:
 
 **Opção A — alias permanente** (recomendado): adicione ao `~/.bashrc`:
 ```bash
 alias nextflow='mamba run -n nextassembler-tools nextflow'
+# ou, se usar micromamba:
+alias nextflow='micromamba run -n nextassembler-tools nextflow'
 ```
 Depois: `source ~/.bashrc`. A partir daí `nextflow` funciona diretamente em qualquer terminal.
 
 **Opção B — ativar o ambiente manualmente** antes de cada uso:
 ```bash
-mamba activate nextassembler-tools
+mamba activate nextassembler-tools   # ou: micromamba activate / conda activate
 nextflow run nextassembler.nf ...
 ```
 
