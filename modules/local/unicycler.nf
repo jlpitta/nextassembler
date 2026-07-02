@@ -1,3 +1,5 @@
+// By João Pitta (jlpitta82@gmail.com) and Beatriz Toscano (beatriz.melo@fiocruz.br)
+// At Fiocruz-PE
 process UNICYCLER {
     tag "$sample"
     label 'process_high'
@@ -5,7 +7,7 @@ process UNICYCLER {
     publishDir "${params.outdir}/${sample}/assembly/unicycler", mode: 'copy'
 
     input:
-    tuple val(sample), path(long_reads), path(r1), path(r2)
+    tuple val(sample), path(r1), path(r2)
 
     output:
     tuple val(sample), path("${sample}.assembly.fasta"), emit: assembly
@@ -13,7 +15,6 @@ process UNICYCLER {
     script:
     """
     unicycler \
-        -l ${long_reads} \
         -1 ${r1} -2 ${r2} \
         -o unicycler_output \
         --threads ${task.cpus}

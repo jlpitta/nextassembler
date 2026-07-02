@@ -1,6 +1,6 @@
 # nextassembler
 
-Pipeline [Nextflow](https://www.nextflow.io/) DSL2 para **montagem de genomas long-read com polishing híbrido** (long reads + short reads Illumina). Combina ferramentas de montagem, polishing e avaliação de qualidade em um fluxo automatizado com gerenciamento de ambientes Conda.
+Pipeline [Nextflow](https://www.nextflow.io/) DSL2 para **montagem de genomas**, com dois caminhos automáticos conforme os dados disponíveis por amostra: **long-read com polishing híbrido** (long reads + short reads Illumina, via Flye) ou **short-read-only** (só Illumina, via Unicycler). Combina ferramentas de montagem, polishing e avaliação de qualidade em um fluxo automatizado com gerenciamento de ambientes Conda.
 
 
 ---
@@ -14,7 +14,7 @@ Pipeline [Nextflow](https://www.nextflow.io/) DSL2 para **montagem de genomas lo
 - [Modos de execução](#modos-de-execução)
 - [Modos de input](#modos-de-input)
 - [Parâmetros](#parâmetros)
-- [Os 8 fluxos de execução](#os-8-fluxos-de-execução)
+- [Os 7 fluxos de execução](#os-7-fluxos-de-execução)
 - [Controle de CPUs](#controle-de-cpus)
 - [Profiles (gerenciador de pacotes)](#profiles-gerenciador-de-pacotes)
 - [Estrutura de arquivos](#estrutura-de-arquivos)
@@ -24,22 +24,24 @@ Pipeline [Nextflow](https://www.nextflow.io/) DSL2 para **montagem de genomas lo
 
 ## Visão geral
 
+O assembler é escolhido **automaticamente por amostra**, sem flag: quem tem
+`long_reads` monta com Flye; quem só tem short reads monta com Unicycler.
+Uma mesma `--samplesheet` pode misturar livremente amostras híbridas,
+long-only e short-only.
+
 ```
-Long reads ──► NanoFilt ──────────────────────────────────────────────────┐
-                                                                           │
-Short reads ─► FASTP ──► R1.clean + R2.clean  (paralelo ao NanoFilt)      │
-                              │                                            │
-                              │          [Flye] ou [Unicycler]  ◄── lr.filtered
-                              │                    │
-                              │           [Racon]  (opcional)
-                              │                    │
-                              │           [Medaka] ◄── lr.filtered
-                              │                    │
-                              └──► [Polypolish] ou [NextPolish]  (opcional)
-                                                   │
-                                               [QUAST]
-                                                   │
-                                          relatório de qualidade
+Amostra tem long_reads?
+│
+├── SIM ──► NanoFilt ──► [Flye] ──► [Racon] (opc.) ──► [Medaka] ──┐
+│                                                                  │
+│           Short reads (se houver) ─► FASTP ─► [Polypolish] ou [NextPolish] (opc.)
+│                                                                  │
+└── NÃO ──► Short reads ─► FASTP ─► [Unicycler] ──────────────────┤
+            (short-read-only, sem Racon/Medaka/polish adicional)  │
+                                                                   ▼
+                                                              [QUAST]
+                                                                   │
+                                                          relatório de qualidade
 ```
 
 ### Ferramentas utilizadas
@@ -49,11 +51,12 @@ Short reads ─► FASTP ──► R1.clean + R2.clean  (paralelo ao NanoFilt)  
 | Filtragem long reads | NanoFilt | Q-score ≥ 10, comprimento ≥ 500 bp |
 | Filtragem short reads | FASTP | Q ≥ 20, comprimento ≥ 50 bp |
 | Downsampling | SeqKit | Limitar número de reads (opcional) |
-| Montagem | Flye / Unicycler | Montagem *de novo* |
-| Polishing long reads | Racon | Polishing rápido pré-Medaka (opcional) |
-| Polishing long reads | Medaka 1.11.3 | Correção de erros com modelo de rede neural |
-| Polishing short reads | **Polypolish** (padrão) | Correção final com Illumina, base a base |
-| Polishing short reads | NextPolish (alternativa) | Correção multi-round com Illumina (`--polisher nextpolish`) |
+| Montagem (long reads) | Flye | Montagem *de novo* a partir de long reads, com polishing híbrido |
+| Montagem (short-read-only) | Unicycler | Montagem *de novo* só com Illumina (baseado em SPAdes), quando não há long reads |
+| Polishing long reads | Racon | Polishing rápido pré-Medaka (opcional, só no caminho Flye) |
+| Polishing long reads | Medaka 1.11.3 | Correção de erros com modelo de rede neural (só no caminho Flye) |
+| Polishing short reads | **Polypolish** (padrão) | Correção final com Illumina, base a base (só no caminho Flye) |
+| Polishing short reads | NextPolish (alternativa) | Correção multi-round com Illumina, `--polisher nextpolish` (só no caminho Flye) |
 | Avaliação | QUAST | Métricas de qualidade da montagem |
 
 ---
@@ -130,11 +133,11 @@ Definido com `--platform` (padrão: `mgicyclone`):
 
 ### `--mode denovo` (padrão)
 
-Monta o genoma do zero com Flye ou Unicycler, seguido de polishing com Medaka e opcionalmente Polypolish ou NextPolish.
+Monta o genoma do zero. Amostras com long reads usam Flye, seguido de polishing com Medaka e opcionalmente Polypolish ou NextPolish; amostras só com short reads usam Unicycler diretamente, sem etapas adicionais de polish.
 
 ### `--mode reference`
 
-Usa um genoma de referência (`--reference ref.fasta`) como draft direto para o Medaka, pulando a etapa de montagem. Indicado para organismos bem caracterizados. Para espécies com alta divergência, prefira `denovo`.
+Usa um genoma de referência (`--reference ref.fasta`) como draft direto para o Medaka, pulando a etapa de montagem. Indicado para organismos bem caracterizados. Para espécies com alta divergência, prefira `denovo`. Requer `long_reads` em todas as amostras — não é compatível com montagem short-read-only.
 
 ---
 
@@ -143,6 +146,8 @@ Usa um genoma de referência (`--reference ref.fasta`) como draft direto para o 
 O pipeline aceita duas formas de entrada, mutuamente exclusivas:
 
 ### Single-sample — parâmetros diretos
+
+**Long reads + short reads (híbrido, Flye):**
 
 ```bash
 nextflow run nextassembler.nf -resume \
@@ -153,6 +158,18 @@ nextflow run nextassembler.nf -resume \
     --short_reads_1 r1.fastq.gz \
     --short_reads_2 r2.fastq.gz
 ```
+
+**Somente short reads (short-read-only, Unicycler) — sem `--long_reads` nem `--genome_size`:**
+
+```bash
+nextflow run nextassembler.nf -resume \
+    --t 32 \
+    --sample_name amostra01 \
+    --short_reads_1 r1.fastq.gz \
+    --short_reads_2 r2.fastq.gz
+```
+
+O pipeline detecta automaticamente a ausência de `--long_reads` e monta com Unicycler, emitindo um aviso no log.
 
 ### Multi-sample — samplesheet CSV
 
@@ -182,20 +199,23 @@ amostra02,data/A02/lr.fastq.gz,data/A02/r1.fastq.gz,data/A02/r2.fastq.gz,5m
 amostra03,data/A03/lr.fastq.gz,data/A03/r1.fastq.gz,data/A03/r2.fastq.gz,4.8m
 ```
 
-**Exemplo 3 — misto (algumas amostras com short reads, outras sem):**
+**Exemplo 3 — misto (híbrida + long-only + short-only na mesma samplesheet):**
 
 ```csv
 sample,long_reads,short_reads_1,short_reads_2,genome_size
 amostra01,data/A01/lr.fastq.gz,data/A01/r1.fastq.gz,data/A01/r2.fastq.gz,5m
 amostra02,data/A02/lr.fastq.gz,,,4.8m
-amostra03,data/A03/lr.fastq.gz,data/A03/r1.fastq.gz,data/A03/r2.fastq.gz,5m
+amostra03,,data/A03/r1.fastq.gz,data/A03/r2.fastq.gz,
 ```
 
-Amostras com short reads passam pelo Polypolish; amostras sem short reads são polidas apenas com Medaka.
+- `amostra01` (long + short): Flye → Medaka → Polypolish → QUAST
+- `amostra02` (só long): Flye → Medaka → QUAST, sem polish (nenhuma amostra é derrubada silenciosamente do resultado por não ter short reads)
+- `amostra03` (só short): Unicycler → QUAST direto, sem NanoFilt/Racon/Medaka/polish; `genome_size` pode ficar vazio, já que só o Flye usa esse parâmetro
 
 - Amostras processadas em **paralelo**, limitadas pelo `--t` global
-- `genome_size` pode ser coluna no CSV (por amostra) ou `--genome_size` como parâmetro global
+- `genome_size` pode ser coluna no CSV (por amostra) ou `--genome_size` como parâmetro global; só é exigido para amostras com `long_reads`
 - Saídas em `results/{sample}/`
+- `--mode reference` exige `long_reads` em **todas** as amostras da samplesheet — misturar com short-only nesse modo gera erro
 
 ---
 
@@ -204,13 +224,12 @@ Amostras com short reads passam pelo Polypolish; amostras sem short reads são p
 | Parâmetro | Padrão | Descrição |
 |---|---|---|
 | `--mode` | `denovo` | Modo: `denovo` ou `reference` |
-| `--long_reads` | — | FASTQ long reads (obrigatório sem samplesheet) |
-| `--samplesheet` | — | CSV multi-sample (alternativa a --long_reads) |
-| `--short_reads_1` | — | R1 Illumina (obrigatório para unicycler e polishing short-read) |
+| `--long_reads` | — | FASTQ long reads. Se omitido (com `--short_reads_1/2` presentes), monta short-read-only via Unicycler; obrigatório em `--mode reference` |
+| `--samplesheet` | — | CSV multi-sample (alternativa a --long_reads); pode misturar amostras híbridas, long-only e short-only |
+| `--short_reads_1` | — | R1 Illumina. Sozinho (sem `--long_reads`), monta short-read-only; combinado com `--long_reads`, é usado no polishing |
 | `--short_reads_2` | — | R2 Illumina |
-| `--genome_size` | — | Tamanho estimado do genoma (ex: `5m`, `4.8m`, `2g`) |
+| `--genome_size` | — | Tamanho estimado do genoma (ex: `5m`, `4.8m`, `2g`). Obrigatório apenas para amostras com `--long_reads` (usado pelo Flye) |
 | `--sample_name` | `sample` | Prefixo dos outputs e nome da subpasta em results/ |
-| `--assembler` | `flye` | Montador: `flye` ou `unicycler` |
 | `--platform` | `mgicyclone` | Plataforma sequenciadora |
 | `--use_racon` | `false` | Ativar polishing com Racon antes do Medaka |
 | `--polisher` | `polypolish` | Polidor short-read: `polypolish` (padrão), `nextpolish` ou `none` |
@@ -225,7 +244,7 @@ Amostras com short reads passam pelo Polypolish; amostras sem short reads são p
 
 ---
 
-## Os 8 fluxos de execução
+## Os 7 fluxos de execução
 
 Cada fluxo pode ser executado de duas formas:
 - **Single-sample** — parâmetros diretos na linha de comando
@@ -307,55 +326,29 @@ nextflow run nextassembler.nf -resume \
     --use_racon
 ```
 
-### Modo `denovo` / Unicycler
+### Modo `denovo` / Unicycler (short-read-only)
 
-> Short reads são **obrigatórios** com Unicycler. Polypolish roda por padrão após o Medaka.
+> Automático: qualquer amostra sem `long_reads` (e com `short_reads_1`/`2`) monta direto com Unicycler, sem Racon/Medaka/polish adicional. Não existe flag `--assembler` — a escolha é sempre pelos dados disponíveis.
 
-**Fluxo 5 — Unicycler + Medaka + Polypolish**
-
-```bash
-# single-sample
-nextflow run nextassembler.nf -resume \
-    --t 32 \
-    --long_reads lr.fastq.gz \
-    --short_reads_1 r1.fastq.gz \
-    --short_reads_2 r2.fastq.gz \
-    --genome_size 5m \
-    --sample_name amostra01 \
-    --assembler unicycler
-
-# multi-sample
-nextflow run nextassembler.nf -resume \
-    --t 64 \
-    --samplesheet samples.csv \
-    --assembler unicycler
-```
-
-**Fluxo 6 — Unicycler + Racon + Medaka + Polypolish**
+**Fluxo 5 — Unicycler (short-read-only)**
 
 ```bash
 # single-sample
 nextflow run nextassembler.nf -resume \
     --t 32 \
-    --long_reads lr.fastq.gz \
     --short_reads_1 r1.fastq.gz \
     --short_reads_2 r2.fastq.gz \
-    --genome_size 5m \
-    --sample_name amostra01 \
-    --assembler unicycler \
-    --use_racon
+    --sample_name amostra01
 
-# multi-sample
+# multi-sample (samples.csv: sample,long_reads,short_reads_1,short_reads_2,genome_size — long_reads e genome_size vazios)
 nextflow run nextassembler.nf -resume \
     --t 64 \
-    --samplesheet samples.csv \
-    --assembler unicycler \
-    --use_racon
+    --samplesheet samples.csv
 ```
 
 ### Modo `reference`
 
-**Fluxo 7 — Referência + Medaka**
+**Fluxo 6 — Referência + Medaka**
 
 ```bash
 # single-sample
@@ -374,7 +367,7 @@ nextflow run nextassembler.nf -resume \
     --reference ref.fasta
 ```
 
-**Fluxo 8 — Referência + Medaka + Polypolish**
+**Fluxo 7 — Referência + Medaka + Polypolish**
 
 ```bash
 # single-sample
@@ -416,29 +409,32 @@ Tenho long + short reads?
   └─► Fluxo 3 (Flye + Medaka + Polypolish) — padrão-ouro
       └─► Máxima qualidade: Fluxo 4 (+ Racon)
 
+Tenho só short reads (sem long reads)?
+  └─► Fluxo 5 (Unicycler short-read-only) — único caminho possível nesse caso
+
 Genoma bem caracterizado / referência confiável disponível?
-  └─► Fluxo 7 ou 8 (modo reference) — mais rápido
+  └─► Fluxo 6 ou 7 (modo reference) — mais rápido, requer long reads em todas as amostras
 
-Organismo com muitos repetidos / genoma complexo?
-  └─► Fluxos 5 ou 6 (Unicycler + short reads obrigatório)
-
-Várias amostras ao mesmo tempo?
-  └─► Qualquer fluxo acima com --samplesheet samples.csv
+Várias amostras ao mesmo tempo, com perfis diferentes (híbrida/long-only/short-only)?
+  └─► Uma única --samplesheet samples.csv resolve todos — o assembler é escolhido
+      automaticamente por amostra, sem precisar rodar comandos separados
 ```
 
 ---
 
 ## Controle de CPUs
 
-O parâmetro `--t` define o total de CPUs disponíveis. O pipeline distribui automaticamente:
+O parâmetro `--t` define o total de CPUs desejadas. O pipeline distribui automaticamente:
 
 | Nível | Processos | CPUs |
 |---|---|---|
 | `process_low` | NanoFilt, FASTP, QUAST | `t / 4` |
 | `process_medium` | Racon, Medaka, Polypolish, NextPolish | `t / 2` |
-| `process_high` | Flye | `t` (todos) |
+| `process_high` | Flye, Unicycler | `t` (todos) |
 
-Exemplo com `--t 32`: NanoFilt + FASTP rodam em paralelo (8 + 8 CPUs), Flye usa todas as 32.
+Exemplo com `--t 32`: NanoFilt + FASTP rodam em paralelo (8 + 8 CPUs), Flye/Unicycler usa todas as 32.
+
+`--t` escala pra qualquer servidor (`--t 100`, `--t 256` etc.), mas é **automaticamente limitado aos cores reais da máquina** (`Runtime.availableProcessors()`, detectado em tempo de execução no `nextflow.config`). Se você passar `--t 100` num servidor com apenas 32 CPUs, o pipeline usa no máximo 32 e emite um aviso no log — não ultrapassa o hardware disponível.
 
 ---
 
@@ -473,8 +469,6 @@ nextassembler/
 ├── nextassembler.nf          # script principal DSL2
 ├── nextflow.config           # configuração global, parâmetros, profiles, CPUs
 ├── install_envs.sh           # pré-instala os ambientes conda
-├── conf/
-│   └── bioinfo2.config       # configuração de recursos para o servidor bioinfo2
 ├── envs/
 │   ├── tools.yaml            # → nextassembler-tools
 │   └── medaka.yaml           # → nextassembler-medaka (isolada)
@@ -501,6 +495,7 @@ nextassembler/
 | **Nunca** rodar Polypolish após NextPolish | Degrada a qualidade — a ordem importa |
 | **Sempre** manter Medaka em ambiente isolado | TensorFlow/ONNX conflita com pacotes bioconda |
 | **Sempre** pré-instalar os envs antes de rodar | Módulos referenciam pelo nome, não pelo YAML |
+| Amostras short-only (Unicycler) **nunca** passam por Polypolish/NextPolish | Unicycler já incorpora os short reads na montagem — polish adicional seria redundante |
 | Usar `-resume` sempre que possível | Retoma do ponto onde parou sem reprocessar etapas concluídas |
 
 ---

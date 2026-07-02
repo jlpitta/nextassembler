@@ -1,3 +1,5 @@
+// By João Pitta (jlpitta82@gmail.com) and Beatriz Toscano (beatriz.melo@fiocruz.br)
+// At Fiocruz-PE
 process MEDAKA {
     tag "$sample"
     label 'process_medium'
